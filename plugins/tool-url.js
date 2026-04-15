@@ -15,40 +15,40 @@ cmd({
   'filename': __filename
 }, async (client, message, match, { reply }) => {
   try {
-    if (!match.quoted) {
+    // Check if quoted message exists
+    const quotedMsg = message.quoted ? message.quoted : message;
+    const mimeType = (quotedMsg.msg || quotedMsg).mimetype || '';
+    
+    if (!mimeType) {
       return reply("*🍁 Please reply to an image, video, or audio message!*");
     }
 
-    const mimeType = match.quoted.mimetype || '';
+    // Download media
+    const mediaBuffer = await quotedMsg.download();
     
-    if (!mimeType) {
-      return reply("*❌ Please reply to a valid media file!*");
-    }
-
-    // Download decrypted media
-    const buffer = await match.quoted.download();
-    
-    if (!buffer || buffer.length === 0) {
+    if (!mediaBuffer || mediaBuffer.length === 0) {
       throw "Failed to download media";
     }
 
-    // Get file extension
+    // Determine extension from mimeType (only known types)
     let extension = '';
-    if (mimeType.includes('jpeg') || mimeType.includes('jpg')) extension = '.jpg';
-    else if (mimeType.includes('png')) extension = '.png';
-    else if (mimeType.includes('webp')) extension = '.webp';
-    else if (mimeType.includes('mp4')) extension = '.mp4';
-    else if (mimeType.includes('mp3')) extension = '.mp3';
-    else if (mimeType.includes('ogg')) extension = '.ogg';
-    else if (mimeType.includes('m4a')) extension = '.m4a';
-    else extension = '.bin';
+    if (mimeType.includes('image/jpeg')) extension = '.jpg';
+    else if (mimeType.includes('image/png')) extension = '.png';
+    else if (mimeType.includes('image/webp')) extension = '.webp';
+    else if (mimeType.includes('video/mp4')) extension = '.mp4';
+    else if (mimeType.includes('audio/mpeg')) extension = '.mp3';
+    else if (mimeType.includes('audio/ogg')) extension = '.ogg';
+    else if (mimeType.includes('audio/mp4')) extension = '.m4a';
+    else if (mimeType.includes('audio/x-m4a')) extension = '.m4a';
+    else if (mimeType.includes('audio/wav')) extension = '.wav';
+    // Removed the else .bin fallback - only use known extensions
     
-    const tempFilePath = path.join(os.tmpdir(), `uguu_${Date.now()}${extension}`);
-    fs.writeFileSync(tempFilePath, buffer);
+    const tempFilePath = path.join(os.tmpdir(), `upload_${Date.now()}${extension}`);
+    fs.writeFileSync(tempFilePath, mediaBuffer);
 
-    // Step 1: Upload to Uguu (working method)
+    // Step 1: Upload to Uguu with explicit filename
     const uguuForm = new FormData();
-    uguuForm.append('files[]', fs.createReadStream(tempFilePath));
+    uguuForm.append('files[]', fs.createReadStream(tempFilePath), `file${extension}`);
 
     const uguuResponse = await axios.post('https://uguu.se/upload.php', uguuForm, {
       headers: {
@@ -64,7 +64,7 @@ cmd({
 
     const uguuUrl = uguuResponse.data.files[0].url;
 
-    // Step 2: Upload Uguu URL to Catbox (your working .urlupload method)
+    // Step 2: Upload Uguu URL to Catbox
     const catboxForm = new FormData();
     catboxForm.append('reqtype', 'urlupload');
     catboxForm.append('url', uguuUrl);
@@ -79,10 +79,15 @@ cmd({
 
     fs.unlinkSync(tempFilePath);
 
-    const mediaUrl = catboxResponse.data.trim();
+    let mediaUrl = catboxResponse.data.trim();
 
     if (!mediaUrl || mediaUrl.toLowerCase().includes('error')) {
       throw "Catbox upload failed";
+    }
+
+    // Fix Catbox URL if it has wrong extension
+    if (mediaUrl.endsWith('.bin') && extension) {
+      mediaUrl = mediaUrl.substring(0, mediaUrl.lastIndexOf('.')) + extension;
     }
 
     // Determine media type
@@ -93,9 +98,9 @@ cmd({
 
     await reply(
       `*${mediaType} Uploaded Successfully*\n\n` +
-      `*Size:* ${formatBytes(buffer.length)}\n` +
+      `*Size:* ${formatBytes(mediaBuffer.length)}\n` +
       `*URL:* ${mediaUrl}\n\n` +
-      `> © Uploaded by Bagga-Shar 💜`
+      `> © Uploaded by Tiger MD 💜`
     );
 
   } catch (error) {
