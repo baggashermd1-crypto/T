@@ -1,183 +1,10 @@
-const axios = require("axios");
-const FormData = require('form-data');
 const fs = require('fs');
 const os = require('os');
 const path = require("path");
-const { cmd, commands } = require("../command");
-const { fromBuffer } = require("file-type");
-
-cmd({
-  'pattern': "tourl",
-  'alias': ["imgtourl", "imgurl", "url", "geturl", "upload"],
-  'react': '🖇',
-  'desc': "Convert media to Catbox URL",
-  'category': "utility",
-  'use': ".tourl [reply to media]",
-  'filename': __filename
-}, async (client, message, args, { reply }) => {
-  try {
-    // FIX: Properly check for quoted message in your structure
-    let quotedMsg = message.quoted;
-    
-    // If message.quoted doesn't exist, try to get it from contextInfo
-    if (!quotedMsg && message.msg?.contextInfo?.quotedMessage) {
-      const quoted = message.msg.contextInfo.quotedMessage;
-      const mediaTypes = ['imageMessage', 'videoMessage', 'audioMessage', 'documentMessage', 'stickerMessage'];
-      
-      for (const type of mediaTypes) {
-        if (quoted[type]) {
-          quotedMsg = quoted[type];
-          quotedMsg.mtype = type;
-          break;
-        }
-      }
-    }
-    
-    if (!quotedMsg) {
-      throw "Please reply to an image, video, audio, or other supported file";
-    }
-
-    // Get mime type
-    const mimeType = quotedMsg.mimetype || '';
-    
-    if (!mimeType) {
-      throw "Could not detect media type. Please reply to a valid media file.";
-    }
-
-    // FIX: Properly download the media using client.downloadMediaMessage
-    let mediaBuffer;
-    
-    try {
-      // Try using the client's download method if available
-      if (client.downloadMediaMessage) {
-        mediaBuffer = await client.downloadMediaMessage(quotedMsg);
-      } 
-      // Try using message.quoted.download if available
-      else if (message.quoted && message.quoted.download) {
-        mediaBuffer = await message.quoted.download();
-      }
-      // Fallback: try to download using the URL directly (won't work for encrypted WhatsApp media)
-      else if (quotedMsg.url) {
-        const response = await axios.get(quotedMsg.url, { 
-          responseType: 'arraybuffer',
-          headers: {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-          }
-        });
-        mediaBuffer = Buffer.from(response.data);
-      }
-      else {
-        throw "Cannot download media. The message might be encrypted.";
-      }
-    } catch (downloadError) {
-      console.error("Download error:", downloadError);
-      throw "Failed to download the media. Please try again with a different file.";
-    }
-
-    if (!mediaBuffer || mediaBuffer.length === 0) {
-      throw "Downloaded media is empty. Please try again.";
-    }
-
-    console.log(`Downloaded ${mediaBuffer.length} bytes, MIME: ${mimeType}`);
-
-    // Get file extension from buffer or mime type
-    let extension = '';
-    const fileTypeResult = await fromBuffer(mediaBuffer);
-    
-    if (fileTypeResult) {
-      extension = '.' + fileTypeResult.ext;
-    } else {
-      // Fallback to mime type mapping
-      if (mimeType.includes('image/jpeg')) extension = '.jpg';
-      else if (mimeType.includes('image/png')) extension = '.png';
-      else if (mimeType.includes('image/webp')) extension = '.webp';
-      else if (mimeType.includes('video/mp4')) extension = '.mp4';
-      else if (mimeType.includes('audio/mpeg')) extension = '.mp3';
-      else if (mimeType.includes('audio/ogg')) extension = '.ogg';
-      else if (mimeType.includes('audio/mp4')) extension = '.m4a';
-      else extension = '.bin';
-    }
-    
-    const tempFilePath = path.join(os.tmpdir(), `catbox_upload_${Date.now()}${extension}`);
-    fs.writeFileSync(tempFilePath, mediaBuffer);
-    
-    // Verify file was written
-    const stats = fs.statSync(tempFilePath);
-    if (stats.size === 0) {
-      fs.unlinkSync(tempFilePath);
-      throw "File is empty after saving";
-    }
-    
-    console.log(`Saved temp file: ${tempFilePath} (${stats.size} bytes)`);
-
-    // Prepare form data for Catbox
-    const form = new FormData();
-    form.append('reqtype', 'fileupload');
-    form.append('fileToUpload', fs.createReadStream(tempFilePath), `upload${extension}`);
-    
-    // Add userhash if you have one (optional)
-    // form.append('userhash', 'YOUR_USERHASH_HERE');
-
-    // Upload to Catbox with proper headers
-    const response = await axios.post("https://catbox.moe/user/api.php", form, {
-      headers: {
-        ...form.getHeaders(),
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-      },
-      timeout: 60000,
-      maxContentLength: Infinity,
-      maxBodyLength: Infinity
-    });
-
-    // Clean up temp file
-    fs.unlinkSync(tempFilePath);
-
-    // Check response
-    let mediaUrl = response.data;
-    
-    if (!mediaUrl || mediaUrl.includes('error') || mediaUrl.includes('Error')) {
-      throw `Catbox error: ${mediaUrl || 'Unknown error'}`;
-    }
-    
-    // Clean the URL (remove any whitespace or newlines)
-    mediaUrl = mediaUrl.trim();
-    
-    if (!mediaUrl.startsWith('http')) {
-      throw `Invalid response from Catbox: ${mediaUrl}`;
-    }
-
-    // Determine media type for response
-    let mediaType = 'File';
-    if (mimeType.includes('image')) mediaType = 'Image';
-    else if (mimeType.includes('video')) mediaType = 'Video';
-    else if (mimeType.includes('audio')) mediaType = 'Audio';
-    else if (mimeType.includes('application/zip')) mediaType = 'ZIP Archive';
-    
-    // Send response
-    await reply(
-      `*${mediaType} Uploaded Successfully*\n\n` +
-      `*Size:* ${formatBytes(mediaBuffer.length)}\n` +
-      `*MIME:* ${mimeType}\n` +
-      `*URL:* ${mediaUrl}\n\n` +
-      `> © Uploaded by TIGER-MDX 💜`
-    );
-
-  } catch (error) {
-    console.error('Upload error:', error);
-    
-    // Better error message based on status code
-    let errorMsg = error.message || error;
-    if (error.response) {
-      if (error.response.status === 412) {
-        errorMsg = "Catbox rejected the file. The file might be corrupted or in an unsupported format. Try a different file.";
-      } else {
-        errorMsg = `HTTP ${error.response.status}: ${error.response.data || error.message}`;
-      }
-    }
-    
-    await reply(`Error: ${errorMsg}`);
-  }
-});
+const { cmd } = require("../command");
+const FormData = require('form-data');
+const fetch = require('node-fetch');
+const axios = require("axios");
 
 // Helper function to format bytes
 function formatBytes(bytes) {
@@ -188,3 +15,286 @@ function formatBytes(bytes) {
   return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
 }
 
+// Helper function to get extension from mime type
+function getExtension(mimeType) {
+  if (mimeType.includes('jpeg') || mimeType.includes('jpg')) return '.jpg';
+  if (mimeType.includes('png')) return '.png';
+  if (mimeType.includes('webp')) return '.webp';
+  if (mimeType.includes('gif')) return '.gif';
+  if (mimeType.includes('mp4')) return '.mp4';
+  if (mimeType.includes('mp3')) return '.mp3';
+  if (mimeType.includes('ogg')) return '.ogg';
+  if (mimeType.includes('m4a')) return '.m4a';
+  if (mimeType.includes('wav')) return '.wav';
+  if (mimeType.includes('pdf')) return '.pdf';
+  if (mimeType.includes('zip')) return '.zip';
+  return '.bin';
+}
+
+// Helper to get quoted message
+function getQuotedMessage(message) {
+  let quotedMsg = message.quoted;
+  
+  if (!quotedMsg && message.msg?.contextInfo?.quotedMessage) {
+    const quoted = message.msg.contextInfo.quotedMessage;
+    const mediaTypes = ['imageMessage', 'videoMessage', 'audioMessage', 'documentMessage', 'stickerMessage'];
+    for (const type of mediaTypes) {
+      if (quoted[type]) {
+        quotedMsg = quoted[type];
+        quotedMsg.mtype = type;
+        break;
+      }
+    }
+  }
+  
+  return quotedMsg;
+}
+
+// Helper to download media
+async function downloadMedia(message, quotedMsg) {
+  if (message.quoted && message.quoted.download) {
+    return await message.quoted.download();
+  }
+  
+  if (global.conn && global.conn.downloadMediaMessage) {
+    return await global.conn.downloadMediaMessage(quotedMsg);
+  }
+  
+  // Fallback: try to download from URL
+  if (quotedMsg.url) {
+    const response = await axios.get(quotedMsg.url, {
+      responseType: 'arraybuffer',
+      headers: { 'User-Agent': 'Mozilla/5.0' }
+    });
+    return Buffer.from(response.data);
+  }
+  
+  throw "Cannot download media";
+}
+
+// ==================== COMMAND 1: node-fetch method ====================
+cmd({
+  'pattern': "tourl",
+  'alias': ["imgtourl", "imgurl", "upload"],
+  'react': '🖇',
+  'desc': "Convert media to Catbox URL (fetch method)",
+  'category': "utility",
+  'use': ".tourl [reply to media]",
+  'filename': __filename
+}, async (client, message, args, { reply }) => {
+  try {
+    const quotedMsg = getQuotedMessage(message);
+    if (!quotedMsg) throw "Please reply to an image, video, or audio file";
+    
+    const mimeType = quotedMsg.mimetype || '';
+    if (!mimeType) throw "Could not detect media type";
+    
+    await reply("⏳ Downloading media...");
+    
+    const mediaBuffer = await downloadMedia(message, quotedMsg);
+    if (!mediaBuffer || mediaBuffer.length === 0) throw "Downloaded media is empty";
+    
+    await reply(`✅ Downloaded ${formatBytes(mediaBuffer.length)}\n⏳ Uploading to Catbox...`);
+    
+    const extension = getExtension(mimeType);
+    const tempFilePath = path.join(os.tmpdir(), `catbox_${Date.now()}${extension}`);
+    fs.writeFileSync(tempFilePath, mediaBuffer);
+    
+    const form = new FormData();
+    form.append('reqtype', 'fileupload');
+    form.append('fileToUpload', fs.createReadStream(tempFilePath));
+    
+    const response = await fetch('https://catbox.moe/user/api.php', {
+      method: 'POST',
+      body: form,
+      headers: form.getHeaders()
+    });
+    
+    fs.unlinkSync(tempFilePath);
+    
+    const responseText = await response.text();
+    if (!response.ok) throw `HTTP ${response.status}: ${responseText}`;
+    
+    const mediaUrl = responseText.trim();
+    if (!mediaUrl || mediaUrl.toLowerCase().includes('error')) throw `Catbox error: ${mediaUrl}`;
+    
+    let mediaType = 'File';
+    if (mimeType.includes('image')) mediaType = 'Image';
+    else if (mimeType.includes('video')) mediaType = 'Video';
+    else if (mimeType.includes('audio')) mediaType = 'Audio';
+    
+    await reply(
+      `*${mediaType} Uploaded Successfully*\n\n` +
+      `*Size:* ${formatBytes(mediaBuffer.length)}\n` +
+      `*URL:* ${mediaUrl}\n\n` +
+      `> © Uploaded by TIGER-MDX 💜`
+    );
+    
+  } catch (error) {
+    console.error(error);
+    await reply(`Error: ${error.message || error}`);
+  }
+});
+
+// ==================== COMMAND 2: axios method ====================
+cmd({
+  'pattern': "tourl2",
+  'alias': ["upload2", "url2"],
+  'react': '📤',
+  'desc': "Convert media to Catbox URL (axios method)",
+  'category': "utility",
+  'filename': __filename
+}, async (client, message, args, { reply }) => {
+  try {
+    const quotedMsg = getQuotedMessage(message);
+    if (!quotedMsg) throw "Please reply to a media file";
+    
+    const mimeType = quotedMsg.mimetype || '';
+    if (!mimeType) throw "Could not detect media type";
+    
+    await reply("⏳ Processing...");
+    
+    const mediaBuffer = await downloadMedia(message, quotedMsg);
+    if (!mediaBuffer || mediaBuffer.length === 0) throw "Download failed";
+    
+    const extension = getExtension(mimeType);
+    const tempFilePath = path.join(os.tmpdir(), `catbox_${Date.now()}${extension}`);
+    fs.writeFileSync(tempFilePath, mediaBuffer);
+    
+    const form = new FormData();
+    form.append('reqtype', 'fileupload');
+    form.append('fileToUpload', fs.createReadStream(tempFilePath));
+    
+    const response = await axios.post('https://catbox.moe/user/api.php', form, {
+      headers: {
+        ...form.getHeaders(),
+        'User-Agent': 'Mozilla/5.0'
+      },
+      timeout: 60000
+    });
+    
+    fs.unlinkSync(tempFilePath);
+    
+    const mediaUrl = response.data.trim();
+    if (!mediaUrl || mediaUrl.toLowerCase().includes('error')) throw `Upload failed: ${mediaUrl}`;
+    
+    let mediaType = 'File';
+    if (mimeType.includes('image')) mediaType = 'Image';
+    else if (mimeType.includes('video')) mediaType = 'Video';
+    else if (mimeType.includes('audio')) mediaType = 'Audio';
+    
+    await reply(
+      `*${mediaType} Uploaded*\n\n` +
+      `*Size:* ${formatBytes(mediaBuffer.length)}\n` +
+      `*URL:* ${mediaUrl}\n\n` +
+      `> © TIGER-MDX`
+    );
+    
+  } catch (error) {
+    console.error(error);
+    await reply(`Error: ${error.message || error}`);
+  }
+});
+
+// ==================== COMMAND 3: URL upload method (no re-upload) ====================
+cmd({
+  'pattern': "urlupload",
+  'alias': ["uploadurl", "directurl"],
+  'react': '🔗',
+  'desc': "Upload media using direct URL (fastest)",
+  'category': "utility",
+  'filename': __filename
+}, async (client, message, args, { reply }) => {
+  try {
+    const quotedMsg = getQuotedMessage(message);
+    if (!quotedMsg || !quotedMsg.url) throw "Please reply to a media message with valid URL";
+    
+    await reply("⏳ Uploading via URL method...");
+    
+    const form = new FormData();
+    form.append('reqtype', 'urlupload');
+    form.append('url', quotedMsg.url);
+    
+    const response = await axios.post('https://catbox.moe/user/api.php', form, {
+      headers: {
+        ...form.getHeaders(),
+        'User-Agent': 'Mozilla/5.0'
+      },
+      timeout: 60000
+    });
+    
+    const mediaUrl = response.data.trim();
+    if (!mediaUrl || mediaUrl.toLowerCase().includes('error')) throw `Upload failed: ${mediaUrl}`;
+    
+    let mediaType = 'File';
+    const mimeType = quotedMsg.mimetype || '';
+    if (mimeType.includes('image')) mediaType = 'Image';
+    else if (mimeType.includes('video')) mediaType = 'Video';
+    else if (mimeType.includes('audio')) mediaType = 'Audio';
+    
+    await reply(
+      `*${mediaType} Uploaded*\n\n` +
+      `*URL:* ${mediaUrl}\n\n` +
+      `> © TIGER-MDX`
+    );
+    
+  } catch (error) {
+    console.error(error);
+    await reply(`Error: ${error.message || error}`);
+  }
+});
+
+// ==================== COMMAND 4: Simple buffer upload (most compatible) ====================
+cmd({
+  'pattern': "upload",
+  'alias': ["simpleupload", "bufupload"],
+  'react': '☁️',
+  'desc': "Simple buffer upload to Catbox",
+  'category': "utility",
+  'filename': __filename
+}, async (client, message, args, { reply }) => {
+  try {
+    const quotedMsg = getQuotedMessage(message);
+    if (!quotedMsg) throw "Please reply to a media file";
+    
+    await reply("☁️ Uploading to Catbox...");
+    
+    const mediaBuffer = await downloadMedia(message, quotedMsg);
+    if (!mediaBuffer || mediaBuffer.length === 0) throw "Download failed";
+    
+    const extension = getExtension(quotedMsg.mimetype || '');
+    const tempFilePath = path.join(os.tmpdir(), `upload_${Date.now()}${extension}`);
+    fs.writeFileSync(tempFilePath, mediaBuffer);
+    
+    // Simple form data
+    const formData = new FormData();
+    formData.append('fileToUpload', fs.createReadStream(tempFilePath));
+    formData.append('reqtype', 'fileupload');
+    
+    const response = await fetch('https://catbox.moe/user/api.php', {
+      method: 'POST',
+      body: formData,
+      headers: formData.getHeaders()
+    });
+    
+    fs.unlinkSync(tempFilePath);
+    
+    const result = await response.text();
+    const url = result.trim();
+    
+    if (!url.startsWith('https://files.catbox.moe/')) {
+      throw `Upload failed: ${url}`;
+    }
+    
+    await reply(
+      `*✅ Upload Successful*\n\n` +
+      `*📦 Size:* ${formatBytes(mediaBuffer.length)}\n` +
+      `*🔗 URL:* ${url}\n\n` +
+      `> © TIGER-MDX`
+    );
+    
+  } catch (error) {
+    console.error(error);
+    await reply(`❌ Error: ${error.message || error}`);
+  }
+});
