@@ -1,5 +1,8 @@
 const axios = require("axios");
 const FormData = require('form-data');
+const fs = require('fs');
+const os = require('os');
+const path = require("path");
 const { cmd } = require("../command");
 
 cmd({
@@ -10,26 +13,48 @@ cmd({
   'category': "utility",
   'use': ".tourl [reply to media]",
   'filename': __filename
-}, async (client, message, args, { reply }) => {
+}, async (client, message, match, { from, reply }) => {
   try {
-    // Check if quoted message exists and has media
-    const quotedMsg = message.quoted ? message.quoted : message;
-    const mimeType = (quotedMsg.msg || quotedMsg).mimetype || '';
+    // Check if quoted message exists (exactly like vv command)
+    if (!match.quoted) {
+      return reply("*🍁 Please reply to an image, video, or audio message!*");
+    }
+
+    const mimeType = match.quoted.mimetype || '';
     
     if (!mimeType) {
-      throw "Please reply to an image, video, audio, or other supported file";
+      return reply("*❌ Please reply to a valid media file!*");
     }
 
-    if (!quotedMsg.url) {
-      throw "Media URL not found";
-    }
-
-    // Prepare form data for Catbox using URL upload method
-    const form = new FormData();
-    form.append('reqtype', 'urlupload');
-    form.append('url', quotedMsg.url);
+    // Download decrypted media (SAME as vv command)
+    const buffer = await match.quoted.download();
     
-    // Upload to Catbox
+    if (!buffer || buffer.length === 0) {
+      throw "Failed to download media";
+    }
+
+    // Get file extension from mime type
+    let extension = '';
+    if (mimeType.includes('image/jpeg')) extension = '.jpg';
+    else if (mimeType.includes('image/png')) extension = '.png';
+    else if (mimeType.includes('image/webp')) extension = '.webp';
+    else if (mimeType.includes('video/mp4')) extension = '.mp4';
+    else if (mimeType.includes('audio/mpeg')) extension = '.mp3';
+    else if (mimeType.includes('audio/ogg')) extension = '.ogg';
+    else if (mimeType.includes('audio/mp4') || mimeType.includes('audio/x-m4a')) extension = '.m4a';
+    else if (mimeType.includes('image/')) extension = '.jpg';
+    else if (mimeType.includes('video/')) extension = '.mp4';
+    else if (mimeType.includes('audio/')) extension = '.mp3';
+    else extension = '.bin';
+    
+    const tempFilePath = path.join(os.tmpdir(), `catbox_${Date.now()}${extension}`);
+    fs.writeFileSync(tempFilePath, buffer);
+
+    // Upload decrypted file to Catbox
+    const form = new FormData();
+    form.append('reqtype', 'fileupload');
+    form.append('fileToUpload', fs.createReadStream(tempFilePath));
+
     const response = await axios.post('https://catbox.moe/user/api.php', form, {
       headers: {
         ...form.getHeaders(),
@@ -38,35 +63,31 @@ cmd({
       timeout: 60000
     });
 
+    fs.unlinkSync(tempFilePath);
+
     const mediaUrl = response.data.trim();
 
     if (!mediaUrl || mediaUrl.toLowerCase().includes('error')) {
       throw "Error uploading to Catbox";
     }
 
-    // Determine media type for response
+    // Determine media type
     let mediaType = 'File';
     if (mimeType.includes('image')) mediaType = 'Image';
     else if (mimeType.includes('video')) mediaType = 'Video';
     else if (mimeType.includes('audio')) mediaType = 'Audio';
-    else if (mimeType.includes('application/zip')) mediaType = 'ZIP Archive';
-    else if (mimeType.includes('application/javascript') || mimeType.includes('text/javascript')) mediaType = 'JavaScript';
-
-    // Get file size from quoted message if available
-    const fileSize = quotedMsg.fileLength || quotedMsg.size || 0;
-    const sizeText = fileSize > 0 ? `\n*Size:* ${formatBytes(parseInt(fileSize))}` : '';
 
     // Send response
     await reply(
       `*${mediaType} Uploaded Successfully*\n\n` +
-      `${sizeText}\n` +
+      `*Size:* ${formatBytes(buffer.length)}\n` +
       `*URL:* ${mediaUrl}\n\n` +
-      `> © Uploaded by JawadTechX 💜`
+      `> © Uploaded by Tiger-MD 💜`
     );
 
   } catch (error) {
-    console.error(error);
-    await reply(`Error: ${error.message || error}`);
+    console.error("Tourl Error:", error);
+    await reply(`❌ Error: ${error.message || error}`);
   }
 });
 
