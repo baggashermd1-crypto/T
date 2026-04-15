@@ -15,7 +15,7 @@ cmd({
   'filename': __filename
 }, async (client, message, match, { from, reply }) => {
   try {
-    // Check if quoted message exists (exactly like vv command)
+    // Check if quoted message exists
     if (!match.quoted) {
       return reply("*🍁 Please reply to an image, video, or audio message!*");
     }
@@ -26,7 +26,7 @@ cmd({
       return reply("*❌ Please reply to a valid media file!*");
     }
 
-    // Download decrypted media (SAME as vv command)
+    // Step 1: Download decrypted media (same as vv command)
     const buffer = await match.quoted.download();
     
     if (!buffer || buffer.length === 0) {
@@ -35,40 +35,56 @@ cmd({
 
     // Get file extension from mime type
     let extension = '';
-    if (mimeType.includes('image/jpeg')) extension = '.jpg';
-    else if (mimeType.includes('image/png')) extension = '.png';
-    else if (mimeType.includes('image/webp')) extension = '.webp';
-    else if (mimeType.includes('video/mp4')) extension = '.mp4';
-    else if (mimeType.includes('audio/mpeg')) extension = '.mp3';
-    else if (mimeType.includes('audio/ogg')) extension = '.ogg';
-    else if (mimeType.includes('audio/mp4') || mimeType.includes('audio/x-m4a')) extension = '.m4a';
-    else if (mimeType.includes('image/')) extension = '.jpg';
-    else if (mimeType.includes('video/')) extension = '.mp4';
-    else if (mimeType.includes('audio/')) extension = '.mp3';
+    if (mimeType.includes('jpeg') || mimeType.includes('jpg')) extension = '.jpg';
+    else if (mimeType.includes('png')) extension = '.png';
+    else if (mimeType.includes('webp')) extension = '.webp';
+    else if (mimeType.includes('mp4')) extension = '.mp4';
+    else if (mimeType.includes('mp3')) extension = '.mp3';
+    else if (mimeType.includes('ogg')) extension = '.ogg';
+    else if (mimeType.includes('m4a')) extension = '.m4a';
     else extension = '.bin';
     
-    const tempFilePath = path.join(os.tmpdir(), `catbox_${Date.now()}${extension}`);
+    const tempFilePath = path.join(os.tmpdir(), `uguu_${Date.now()}${extension}`);
     fs.writeFileSync(tempFilePath, buffer);
 
-    // Upload decrypted file to Catbox
-    const form = new FormData();
-    form.append('reqtype', 'fileupload');
-    form.append('fileToUpload', fs.createReadStream(tempFilePath));
+    // Step 2: Upload to uguu.se first (max 128MB, expires after 3 hours)
+    const uguuForm = new FormData();
+    uguuForm.append('files[]', fs.createReadStream(tempFilePath));
 
-    const response = await axios.post('https://catbox.moe/user/api.php', form, {
+    const uguuResponse = await axios.post('https://uguu.se/upload.php', uguuForm, {
       headers: {
-        ...form.getHeaders(),
+        ...uguuForm.getHeaders(),
         'User-Agent': 'Mozilla/5.0'
       },
       timeout: 60000
     });
 
+    if (!uguuResponse.data || !uguuResponse.data[0] || !uguuResponse.data[0].url) {
+      throw "Failed to upload to uguu.se";
+    }
+
+    const uguuUrl = uguuResponse.data[0].url;
+    
+    // Step 3: Upload the uguu URL to Catbox using URL method (works perfectly)
+    const catboxForm = new FormData();
+    catboxForm.append('reqtype', 'urlupload');
+    catboxForm.append('url', uguuUrl);
+
+    const catboxResponse = await axios.post('https://catbox.moe/user/api.php', catboxForm, {
+      headers: {
+        ...catboxForm.getHeaders(),
+        'User-Agent': 'Mozilla/5.0'
+      },
+      timeout: 60000
+    });
+
+    // Clean up temp file
     fs.unlinkSync(tempFilePath);
 
-    const mediaUrl = response.data.trim();
+    const mediaUrl = catboxResponse.data.trim();
 
     if (!mediaUrl || mediaUrl.toLowerCase().includes('error')) {
-      throw "Error uploading to Catbox";
+      throw `Catbox error: ${mediaUrl}`;
     }
 
     // Determine media type
@@ -82,7 +98,7 @@ cmd({
       `*${mediaType} Uploaded Successfully*\n\n` +
       `*Size:* ${formatBytes(buffer.length)}\n` +
       `*URL:* ${mediaUrl}\n\n` +
-      `> © Uploaded by Tiger-MD 💜`
+      `> © Uploaded by TIGER-MD 💜`
     );
 
   } catch (error) {
