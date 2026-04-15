@@ -1,0 +1,20 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>App Running</title>
+</head>
+<body>
+    <h1>App Running Successfully</h1>
+    <p>Status: Active</p>
+    <p>Time: <span id="time"></span></p>
+
+    <script>
+        function updateTime() {
+            document.getElementById('time').innerText = new Date().toLocaleTimeString();
+        }
+        updateTime();
+        setInterval(updateTime, 1000);
+    </script>
+</body>
+</html>m.message.extendedTextMessage
