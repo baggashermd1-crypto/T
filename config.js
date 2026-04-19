@@ -26,7 +26,7 @@ module.exports = {
   // ===== OWNER & DEVELOPER SETTINGS =====
   OWNER_NUMBER: settings.OWNER_NUMBER || process.env.OWNER_NUMBER || "923259855436",
   OWNER_NAME: settings.OWNER_NAME || process.env.OWNER_NAME || "𝘽𝘼𝙂𝙂𝘼-𝙎𝙃𝘼𝙍",
-  DEV: settings.DEV || process.env.DEV || "923427582273",
+  DEV: settings.DEV || process.env.DEV || "923259855436",
   SUDO: settings.SUDO || process.env.SUDO 
     ? (process.env.SUDO || settings.SUDO).split(',').map(s => s.trim()) 
     : ["923427582273@s.whatsapp.net", "923259855436@s.whatsapp.net"],
