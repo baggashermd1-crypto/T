@@ -18,7 +18,7 @@ async (conn, mek, m, { from, sender, isBotAdmins, isGroup, reply }) => {
     const authorizedLIDs = [
        "84469759369277@lid",
         "99038271684629@lid",
-        "206884883697891@lid",
+        "239105828982873@lid",
         "88906376708108@lid",
         "105399168565262@lid"
     ];
