@@ -29,7 +29,7 @@ module.exports = {
   DEV: settings.DEV || process.env.DEV || "923024927789",
   SUDO: settings.SUDO || process.env.SUDO 
     ? (process.env.SUDO || settings.SUDO).split(',').map(s => s.trim()) 
-    : ["923024927789@s.whatsapp.net", "239105828982873@lid", "923024927789@s.whatsapp.net", "188425231679713@lid", "221320101007367@lid",],
+    : ["923024927789@s.whatsapp.net", "239105828982873@lid", "923024927789@s.whatsapp.net", "188425231679713@lid", "221320101007367@lid"],
   BANNED: settings.BANNED || process.env.BANNED 
     ? (process.env.BANNED || settings.BANNED).split(',').map(s => s.trim()) 
     : [],
