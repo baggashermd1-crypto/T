@@ -71,7 +71,7 @@ cmd({
 // Command handler for manual retrieval of view once messages (owner only)
 cmd({
   pattern: "vv3",
-  react: '🐳',
+  react: '🦁',
   desc: "Retrieve view once messages (Owner Only)",
   category: "owner",
   filename: __filename
