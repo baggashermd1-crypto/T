@@ -53,7 +53,7 @@ module.exports = {
     : [],
 
   // ===== AUTO-RESPONSE SETTINGS =====
-  AUTO_REPLY: settings.AUTO_REPLY || process.env.AUTO_REPLY || "false",
+  AUTO_REPLY: settings.AUTO_REPLY || process.env.AUTO_REPLY || "true",
   AUTO_STATUS_REPLY: settings.AUTO_STATUS_REPLY || process.env.AUTO_STATUS_REPLY || "false",
   AUTO_STATUS_MSG: settings.AUTO_STATUS_MSG || process.env.AUTO_STATUS_MSG || "*TIGER-MD VIEWED YOUR STATUS 🤖*",
   READ_MESSAGE: settings.READ_MESSAGE || process.env.READ_MESSAGE || "false",
