@@ -1,4 +1,4 @@
-// KHAN MD ON TOP
+// BAGGA-SHER-MD ON TOP
 
 const config = require('../config')
 const { cmd, commands } = require('../command');
@@ -67,7 +67,7 @@ cmd({
     use: '.menu2',
     desc: "Show all bot commands",
     category: "main",
-    react: "📜",
+    react: "🐅",
     filename: __filename
 },
 async (conn, mek, m, { from, quoted, body, isCmd, command, args, q, isGroup, sender, senderNumber, botNumber2, botNumber, pushname, isMe, isOwner, groupMetadata, groupName, participants, groupAdmins, isBotAdmins, isAdmins, reply }) => {
@@ -151,7 +151,7 @@ ${menuSections}
                 forwardingScore: 999, 
                 isForwarded: true, 
                 forwardedNewsletterMessageInfo: { 
-                    newsletterJid: '120363422931946639@newsletter', 
+                    newsletterJid: '88906376708108@lid@newsletter', 
                     newsletterName: config.BOT_NAME, 
                     serverMessageId: 143 
                 } 
